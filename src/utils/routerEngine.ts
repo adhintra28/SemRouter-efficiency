@@ -1,75 +1,148 @@
 export interface Model {
   id: string;
   name: string;
+  provider: "google" | "openai" | "groq" | "anthropic";
   parameters: string;
   inputCostPer1M: number; // in USD
   outputCostPer1M: number; // in USD
   avgLatency: number; // in ms
   description: string;
   color: string;
+  apiModelId: string;
 }
 
 export const MODELS: Record<string, Model> = {
-  nano: {
-    id: "nano",
+  // Google
+  "gemini-nano": {
+    id: "gemini-nano",
     name: "Gemini Nano",
+    provider: "google",
     parameters: "1.8B",
     inputCostPer1M: 0.03,
     outputCostPer1M: 0.03,
     avgLatency: 110,
     description: "On-device tasks, short text processing, fast greetings",
-    color: "#6366f1", // Indigo
+    color: "#94a3b8", // Slate 400
+    apiModelId: "gemini-1.5-flash", // fall back to flash since nano isn't in public web API
   },
-  flash: {
-    id: "flash",
-    name: "Gemini Flash",
+  "gemini-flash": {
+    id: "gemini-flash",
+    name: "Gemini 1.5 Flash",
+    provider: "google",
     parameters: "8B",
     inputCostPer1M: 0.075,
     outputCostPer1M: 0.30,
-    avgLatency: 320,
+    avgLatency: 280,
     description: "Summarization, translation, simple data extraction",
-    color: "#06b6d4", // Cyan
+    color: "#64748b", // Slate 500
+    apiModelId: "gemini-1.5-flash",
   },
-  pro: {
-    id: "pro",
-    name: "Gemini Pro",
-    parameters: "27B",
+  "gemini-pro": {
+    id: "gemini-pro",
+    name: "Gemini 1.5 Pro",
+    provider: "google",
+    parameters: "27B equivalent",
     inputCostPer1M: 1.25,
     outputCostPer1M: 5.00,
-    avgLatency: 780,
+    avgLatency: 720,
     description: "Coding, multi-step logic, structured reasoning",
-    color: "#a855f7", // Purple
+    color: "#475569", // Slate 600
+    apiModelId: "gemini-1.5-pro",
   },
-  ultra: {
-    id: "ultra",
-    name: "Gemini Ultra",
-    parameters: "137B+",
+
+  // OpenAI
+  "gpt-4o-mini": {
+    id: "gpt-4o-mini",
+    name: "GPT-4o Mini",
+    provider: "openai",
+    parameters: "12B equivalent",
+    inputCostPer1M: 0.15,
+    outputCostPer1M: 0.60,
+    avgLatency: 250,
+    description: "Fast, cheap, and very smart lightweight model",
+    color: "#64748b", // Slate 500
+    apiModelId: "gpt-4o-mini",
+  },
+  "gpt-4o": {
+    id: "gpt-4o",
+    name: "GPT-4o",
+    provider: "openai",
+    parameters: "175B+ equivalent",
     inputCostPer1M: 5.00,
     outputCostPer1M: 15.00,
-    avgLatency: 1650,
-    description: "Complex mathematical proofs, system architecture, hard coding problems",
-    color: "#ec4899", // Pink
+    avgLatency: 1200,
+    description: "State-of-the-art reasoning, logic, and coding",
+    color: "#334155", // Slate 700
+    apiModelId: "gpt-4o",
+  },
+
+  // Groq / Meta
+  "llama-3-8b": {
+    id: "llama-3-8b",
+    name: "Llama 3 8B (Groq)",
+    provider: "groq",
+    parameters: "8B",
+    inputCostPer1M: 0.05,
+    outputCostPer1M: 0.08,
+    avgLatency: 90,
+    description: "Sub-100ms ultra-fast response for simple tasks",
+    color: "#64748b", // Slate 500
+    apiModelId: "llama3-8b-8192",
+  },
+  "llama-3-70b": {
+    id: "llama-3-70b",
+    name: "Llama 3 70B (Groq)",
+    provider: "groq",
+    parameters: "70B",
+    inputCostPer1M: 0.59,
+    outputCostPer1M: 0.79,
+    avgLatency: 180,
+    description: "High-performance open weights reasoning",
+    color: "#475569", // Slate 600
+    apiModelId: "llama3-70b-8192",
+  },
+
+  // Anthropic
+  "claude-3-haiku": {
+    id: "claude-3-haiku",
+    name: "Claude 3 Haiku",
+    provider: "anthropic",
+    parameters: "9B equivalent",
+    inputCostPer1M: 0.25,
+    outputCostPer1M: 1.25,
+    avgLatency: 350,
+    description: "Balanced speed and conversational quality",
+    color: "#64748b", // Slate 500
+    apiModelId: "claude-3-haiku-20240307",
+  },
+  "claude-3-5-sonnet": {
+    id: "claude-3-5-sonnet",
+    name: "Claude 3.5 Sonnet",
+    provider: "anthropic",
+    parameters: "150B+ equivalent",
+    inputCostPer1M: 3.00,
+    outputCostPer1M: 15.00,
+    avgLatency: 1400,
+    description: "Deep reasoning, coding, and precise analysis",
+    color: "#334155", // Slate 700
+    apiModelId: "claude-3-5-sonnet-20240620",
   },
 };
 
-export interface ScoreBreakdown {
-  nano: number;
-  flash: number;
-  pro: number;
-  ultra: number;
-}
-
-export interface RoutingDecision {
+export interface ModelExecutionResult {
+  modelId: string;
+  modelName: string;
+  provider: string;
   query: string;
-  model: Model;
-  reason: string;
-  scores: ScoreBreakdown;
+  response: string;
   inputTokens: number;
   outputTokens: number;
-  cost: number;
+  inputCostPer1M: number;
+  outputCostPer1M: number;
+  totalCost: number;
   latency: number;
-  simulatedResponse: string;
   timestamp: string;
+  isLive: boolean;
 }
 
 // Preset query database for simulations and demo testing
@@ -274,159 +347,70 @@ export const PRESET_QUERIES: PresetQuery[] = [
 ];
 
 // Fallback response generator if user inputs a custom query that is not in the preset list
-export function generateSimulatedResponse(query: string, category: string): { response: string, inTokens: number, outTokens: number } {
+export function generateSimulatedResponse(query: string, modelId: string): { response: string, inTokens: number, outTokens: number } {
   const inTokens = Math.max(5, Math.ceil(query.length / 4));
   let outTokens = 20;
   let response = "";
 
-  switch (category) {
-    case "nano":
-      response = `[Gemini Nano Response] Replicated simple answer. Processing quick request: "${query.substring(0, 30)}${query.length > 30 ? '...' : ''}" successfully.`;
-      outTokens = Math.ceil(response.length / 4);
-      break;
-    case "flash":
-      response = `[Gemini Flash Response] Here is a quick summarization and factual answer regarding your query. I have parsed the details and extracted the relevant information: we analyzed your prompt "${query}" and found it falls within medium complexity. Please let me know if you need specific bullet points.`;
-      outTokens = Math.ceil(response.length / 4);
-      break;
-    case "pro":
-      response = `[Gemini Pro Response] Let's analyze your request methodically. 
-1. **Context Analysis**: The query asks for detail on "${query}".
-2. **Implementation/Reasoning**: To address this, we need structured thinking:
-   - Identify variables and design patterns.
-   - Implement logical checks.
-3. **Conclusion**: This requires mid-to-high parameter sizes to resolve correctly, maintaining high quality without the cost of our largest models.`;
-      outTokens = Math.ceil(response.length / 4);
-      break;
-    case "ultra":
-      response = `[Gemini Ultra Response] ### Comprehensive Deep Analysis
-Your query involves complex logical constraints and high cognitive difficulty. 
+  const model = MODELS[modelId] || MODELS["gemini-flash"];
+  const cleanText = query.toLowerCase();
 
-#### System Design / Analytical Proof:
-To formulate a complete solution for "${query}", we construct a mathematical model or distributed architecture. This ensures fault-tolerance, low resource overhead, and optimal algorithmic efficiency.
+  // Custom translation and greeting handlers to ensure simulated outputs match context
+  const isTranslation = cleanText.includes("say") || cleanText.includes("translate") || cleanText.includes("spanish") || cleanText.includes("french") || cleanText.includes("german") || cleanText.includes("italian") || cleanText.includes("chinese") || cleanText.includes("japanese");
+  const isGreeting = cleanText.includes("hello") || cleanText.includes("hi ") || cleanText.startsWith("hi") || cleanText.includes("hey") || cleanText.includes("how's it going") || cleanText.includes("how are you");
 
-#### Refactored Approach & Optimizations:
-We must account for edge cases (null inputs, racing conditions, overflow limits) and index configurations. 
-By scaling vertically and horizontally, the system maintains integrity under heavy multi-tenant operations. 
-*(This answer represents 137B+ parameter reasoning density, ensuring perfect precision for critical tasks).*`;
-      outTokens = Math.ceil(response.length / 4);
-      break;
+  if (isTranslation) {
+    if (cleanText.includes("hello")) {
+      response = `[${model.name} Response] "Hello" in Spanish is "Hola".`;
+    } else if (cleanText.includes("good morning")) {
+      response = `[${model.name} Response] "Good morning" in Spanish is "Buenos días".`;
+    } else {
+      response = `[${model.name} Response] To express "${query.replace(/translate|say/gi, '').trim()}" in the target language, you would say: "[Translated phrase]".`;
+    }
+    outTokens = Math.max(5, Math.ceil(response.length / 4));
+  } else if (isGreeting) {
+    response = `[${model.name} Response] Hello! I'm doing well, thank you. How can I help you today?`;
+    outTokens = Math.max(5, Math.ceil(response.length / 4));
+  } else if (model.id === "gemini-nano" || model.id === "llama-3-8b" || model.id === "claude-3-haiku" || model.id === "gpt-4o-mini") {
+    // Trivial/Low Complexity tier simulated responses
+    response = `[${model.name} Response] Trivial query processed. Prompt: "${query.substring(0, 35)}${query.length > 35 ? '...' : ''}". Everything looks good! Let me know if you need anything else.`;
+    outTokens = Math.ceil(response.length / 4);
+  } else if (model.id === "gemini-flash" || model.id === "gpt-4o-mini" || model.id === "claude-3-haiku") {
+    // Medium complexity tier
+    response = `[${model.name} Response] I have analyzed your request regarding "${query}". Here is a concise summary of the key facts:
+- Complexity: Medium
+- Focus Area: Informational Retrieval
+This request has been successfully parsed and fulfilled by ${model.name} to optimize response latency and pricing.`;
+    outTokens = Math.ceil(response.length / 4);
+  } else if (model.id === "gemini-pro" || model.id === "llama-3-70b") {
+    // High complexity tier
+    response = `[${model.name} Response] Methodical reasoning for: "${query}".
+1. Assessment: This query contains intermediate logical steps and coding requirements.
+2. Analysis: We configure structured parameters and verify standard library definitions.
+3. Conclusion: Handled by ${model.name} to provide precise coding/reasoning outputs.`;
+    outTokens = Math.ceil(response.length / 4);
+  } else {
+    // Extreme complexity tier
+    response = `[${model.name} Response] Deep Reasoning & System Evaluation
+Your prompt requires deep parameter analysis: "${query}".
+
+Proposed Approach:
+We isolate variables, define edge conditions, and design a scalable, fault-tolerant structure. By evaluating standard constraints, we guarantee correctness.
+
+*(Answer computed using the full parameter capacity of ${model.name} to ensure complete logical fidelity for complex tasks).*`;
+    outTokens = Math.ceil(response.length / 4);
   }
 
   return { response, inTokens, outTokens };
 }
 
-// Semantic routing rules evaluator
-export function evaluateQueryComplexity(
-  query: string, 
-  thresholds: { nano: number; flash: number; pro: number }
-): { scores: ScoreBreakdown; selectedModelId: string; reason: string } {
-  const cleanText = query.toLowerCase();
-  
-  // Keyword definitions
-  const nanoKeywords = ["hi", "hello", "hey", "hola", "greetings", "thanks", "thank you", "bye", "goodbye", "welcome", "yo", "morning", "night", "ok", "okay", "yes", "no"];
-  const flashKeywords = ["what is", "who is", "when did", "capital", "weather", "translate", "summarize", "convert", "correct", "spelling", "define", "list of", "synonym", "how tall", "formula", "temperature", "extract"];
-  const proKeywords = ["how do i", "explain how", "write a", "code to", "implement", "script", "algorithm", "debug", "function", "compare", "pros and cons", "analyze", "why does", "solve", "calculate", "python", "javascript", "program", "class", "difference between"];
-  const ultraKeywords = ["architecture", "system design", "optimize", "mathematical proof", "proof", "derive", "complex", "refactor", "compiler", "machine learning", "neural network", "transformer", "fault-tolerant", "concurrent", "lock-free", "thread", "database design", "b-tree"];
-
-  let nanoScore = 0;
-  let flashScore = 0;
-  let proScore = 0;
-  let ultraScore = 0;
-
-  // 1. Length Factor: extremely short queries lean Nano/Flash; very long ones lean Pro/Ultra
-  if (query.length < 20) {
-    nanoScore += 4;
-    flashScore += 2;
-  } else if (query.length < 80) {
-    flashScore += 3;
-    nanoScore += 1;
-    proScore += 1;
-  } else if (query.length < 300) {
-    proScore += 3;
-    flashScore += 2;
-  } else {
-    ultraScore += 4;
-    proScore += 2;
-  }
-
-  // 2. Keyword matching
-  const words = cleanText.split(/[^a-zA-Z0-9$_\-+]+/);
-  
-  words.forEach(word => {
-    if (word.length < 2) return;
-    if (nanoKeywords.includes(word)) nanoScore += 2;
-    if (flashKeywords.some(kw => kw.includes(word) || word.includes(kw))) flashScore += 1.5;
-    if (proKeywords.some(kw => kw.includes(word) || word.includes(kw))) proScore += 1.8;
-    if (ultraKeywords.some(kw => kw.includes(word) || word.includes(kw))) ultraScore += 2.2;
-  });
-
-  // 3. Syntax patterns (Regex heuristics)
-  // Code indicator
-  const hasCodeSyntax = /[{}\[\]();=<>+\-*\/]/.test(query) && (cleanText.includes("def ") || cleanText.includes("function") || cleanText.includes("var ") || cleanText.includes("const") || cleanText.includes("class ") || cleanText.includes("import ") || cleanText.includes("cpp") || cleanText.includes("java") || cleanText.includes("rust"));
-  if (hasCodeSyntax) {
-    proScore += 5;
-    ultraScore += 3;
-  }
-
-  // Math/Equation indicator
-  const hasMathSyntax = /[\d]+[\s]*[\+\-\*\/=]+[\s]*[\d]+/.test(query) || cleanText.includes("proof") || cleanText.includes("solve") || cleanText.includes("integral") || cleanText.includes("equation") || cleanText.includes("square root");
-  if (hasMathSyntax) {
-    proScore += 3;
-    ultraScore += 4;
-  }
-
-  // Large system indicators
-  const hasSystemDesign = cleanText.includes("system design") || cleanText.includes("architecture") || cleanText.includes("scalable") || cleanText.includes("microservices") || cleanText.includes("load balancer") || cleanText.includes("fault-tolerant");
-  if (hasSystemDesign) {
-    ultraScore += 8;
-  }
-
-  // Normalize scores to a scale of 0-10
-  const maxRawScore = Math.max(nanoScore, flashScore, proScore, ultraScore, 1);
-  const scores: ScoreBreakdown = {
-    nano: Math.round((nanoScore / maxRawScore) * 100) / 10,
-    flash: Math.round((flashScore / maxRawScore) * 100) / 10,
-    pro: Math.round((proScore / maxRawScore) * 100) / 10,
-    ultra: Math.round((ultraScore / maxRawScore) * 100) / 10,
-  };
-
-  // Determine complexity based on normalized score distributions and user thresholds
-  // We can measure complexity on a scale of 0 - 3 (Nano = 0, Flash = 1, Pro = 2, Ultra = 3)
-  // Or we look at which category has the highest relative strength, modulated by thresholds.
-  
-  // Custom complexity metric from 0 to 10
-  // Weights: nano contribution = 1, flash = 4, pro = 7, ultra = 10
-  const weightedSum = (scores.nano * 1) + (scores.flash * 4) + (scores.pro * 7) + (scores.ultra * 10);
-  const totalScoreSum = (scores.nano + scores.flash + scores.pro + scores.ultra) || 1;
-  const complexityLevel = weightedSum / totalScoreSum; // ranges 1.0 to 10.0
-
-  let selectedModelId = "flash";
-  let reason = "";
-
-  if (complexityLevel < thresholds.nano) {
-    selectedModelId = "nano";
-    reason = `Conversational intent and very low query complexity (Score: ${complexityLevel.toFixed(1)} < ${thresholds.nano}). Routed to ultra-light 1.8B parameter model.`;
-  } else if (complexityLevel < thresholds.flash) {
-    selectedModelId = "flash";
-    reason = `Factual lookup or straightforward request. Low-to-medium complexity (Score: ${complexityLevel.toFixed(1)} < ${thresholds.flash}). Routed to 8B parameter model for balanced speed and cost.`;
-  } else if (complexityLevel < thresholds.pro) {
-    selectedModelId = "pro";
-    reason = `Coding syntax, multi-step logic, or standard analytical demand (Score: ${complexityLevel.toFixed(1)} < ${thresholds.pro}). Routed to 27B parameter model to ensure reasoning accuracy.`;
-  } else {
-    selectedModelId = "ultra";
-    reason = `Highly complex logic, system architecture constraints, or advanced math proof (Score: ${complexityLevel.toFixed(1)} >= ${thresholds.pro}). Routed to premium 137B+ parameter model for maximum reliability.`;
-  }
-
-  return { scores, selectedModelId, reason };
-}
-
-// Router simulation engine
-export function routeQuery(
+// Single-model simulation runner
+export function runModelQuery(
   queryText: string,
-  thresholds = { nano: 2.8, flash: 5.2, pro: 7.8 }
-): RoutingDecision {
-  const { scores, selectedModelId, reason } = evaluateQueryComplexity(queryText, thresholds);
-  const model = MODELS[selectedModelId];
+  modelId: string,
+  modelSpec?: Model
+): ModelExecutionResult {
+  const model = modelSpec || MODELS[modelId] || MODELS["gemini-flash"];
 
   // Try to find in preset list for authentic responses
   const preset = PRESET_QUERIES.find(
@@ -440,22 +424,22 @@ export function routeQuery(
   if (preset) {
     responseText = preset.simulatedResponse;
     inTokens = preset.estimatedInputTokens;
-    // Adapt output tokens slightly based on model selection to simulate density differences
-    if (selectedModelId === "nano") {
+    // Adapt output tokens slightly based on model complexity tier to simulate density differences
+    if (model.id === "gemini-nano" || model.id === "llama-3-8b") {
       outTokens = Math.max(5, Math.ceil(preset.estimatedOutputTokens * 0.8));
-    } else if (selectedModelId === "ultra") {
+    } else if (model.id === "gpt-4o" || model.id === "claude-3-5-sonnet") {
       outTokens = Math.ceil(preset.estimatedOutputTokens * 1.25);
     } else {
       outTokens = preset.estimatedOutputTokens;
     }
   } else {
-    const custom = generateSimulatedResponse(queryText, selectedModelId);
+    const custom = generateSimulatedResponse(queryText, model.id);
     responseText = custom.response;
     inTokens = custom.inTokens;
     outTokens = custom.outTokens;
   }
 
-  // Calculate cost: (inputTokens / 1,000,000 * inputCostPer1M) + (outputTokens / 1,000,000 * outputCostPer1M)
+  // Calculate cost
   const cost = (inTokens / 1000000 * model.inputCostPer1M) + (outTokens / 1000000 * model.outputCostPer1M);
   
   // Calculate simulated latency with slight random jitter (+-15%)
@@ -463,15 +447,188 @@ export function routeQuery(
   const latency = Math.round(model.avgLatency * jitter);
 
   return {
+    modelId: model.id,
+    modelName: model.name,
+    provider: model.provider,
     query: queryText,
-    model,
-    reason,
-    scores,
+    response: responseText,
     inputTokens: inTokens,
     outputTokens: outTokens,
-    cost,
-    latency,
-    simulatedResponse: responseText,
+    inputCostPer1M: model.inputCostPer1M,
+    outputCostPer1M: model.outputCostPer1M,
+    totalCost: cost,
+    latency: latency,
     timestamp: new Date().toLocaleTimeString(),
+    isLive: false,
   };
 }
+
+function getWords(text: string): Set<string> {
+  return new Set(text.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean));
+}
+
+function calculateJaccardSimilarity(text1: string, text2: string): number {
+  const set1 = getWords(text1);
+  const set2 = getWords(text2);
+  
+  if (set1.size === 0 && set2.size === 0) return 1;
+  
+  const intersection = new Set([...set1].filter(x => set2.has(x)));
+  const union = new Set([...set1, ...set2]);
+  
+  return intersection.size / union.size;
+}
+
+export function classifyQueryByPresetSimilarity(query: string): 'nano' | 'flash' | 'pro' | 'ultra' {
+  let bestPreset = PRESET_QUERIES[0];
+  let maxSimilarity = -1;
+  
+  for (const preset of PRESET_QUERIES) {
+    const sim = calculateJaccardSimilarity(query, preset.text);
+    if (sim > maxSimilarity) {
+      maxSimilarity = sim;
+      bestPreset = preset;
+    }
+  }
+  
+  const categoryMapping: Record<string, 'nano' | 'flash' | 'pro' | 'ultra'> = {
+    easy: 'nano',
+    medium: 'flash',
+    hard: 'pro',
+    extreme: 'ultra'
+  };
+  
+  return categoryMapping[bestPreset.expectedCategory] || 'flash';
+}
+
+export function classifyQueryComplexity(query: string): 'nano' | 'flash' | 'pro' | 'ultra' {
+  return classifyQueryByPresetSimilarity(query);
+}
+
+export function getIntersectionModelId(
+  results: ModelExecutionResult[],
+  precomputedComplexity?: 'nano' | 'flash' | 'pro' | 'ultra' | null,
+  latencyWeight = 0.5,
+  costWeight = 0.5
+): string | null {
+  if (results.length === 0) return null;
+  if (results.length === 1) return results[0].modelId;
+
+  const query = results[0].query;
+  const complexity = precomputedComplexity || classifyQueryComplexity(query);
+
+  const tierLevels = { nano: 1, flash: 2, pro: 3, ultra: 4 };
+  const queryLevel = tierLevels[complexity];
+
+  const modelTierLevels: Record<string, number> = {
+    'gemini-nano': 1,
+    'llama-3-8b': 1,
+    'claude-3-haiku': 1,
+    'gpt-4o-mini': 2,
+    'gemini-flash': 2,
+    'gemini-pro': 3,
+    'llama-3-70b': 3,
+    'gpt-4o': 4,
+    'claude-3-5-sonnet': 4
+  };
+
+  // Find eligible models of the required level or gracefully degrade to next highest available level
+  let eligibleResults: ModelExecutionResult[] = [];
+  for (let level = queryLevel; level >= 1; level--) {
+    eligibleResults = results.filter(r => (modelTierLevels[r.modelId] || 1) >= level);
+    if (eligibleResults.length > 0) {
+      break;
+    }
+  }
+
+  if (eligibleResults.length === 0) {
+    eligibleResults = results;
+  }
+
+  const sortedByCost = [...eligibleResults].sort((a, b) => a.totalCost - b.totalCost);
+  const sortedByLatency = [...eligibleResults].sort((a, b) => a.latency - b.latency);
+
+  const modelScores: Record<string, number> = {};
+
+  eligibleResults.forEach((r) => {
+    const costRank = sortedByCost.findIndex(item => item.modelId === r.modelId) + 1;
+    const latencyRank = sortedByLatency.findIndex(item => item.modelId === r.modelId) + 1;
+    modelScores[r.modelId] = (costRank * costWeight) + (latencyRank * latencyWeight);
+  });
+
+  let bestModelId = eligibleResults[0].modelId;
+  let bestScore = Infinity;
+
+  eligibleResults.forEach((r) => {
+    if (modelScores[r.modelId] < bestScore) {
+      bestScore = modelScores[r.modelId];
+      bestModelId = r.modelId;
+    } else if (modelScores[r.modelId] === bestScore) {
+      const currentBest = eligibleResults.find(item => item.modelId === bestModelId);
+      if (currentBest && r.latency < currentBest.latency) {
+        bestModelId = r.modelId;
+      }
+    }
+  });
+
+  return bestModelId;
+}
+
+export interface SegmentedPart {
+  text: string;
+  complexity: 'nano' | 'flash' | 'pro' | 'ultra';
+  routedModelId: string;
+  routedModelName: string;
+  cost: number;
+  latency: number;
+  tokens: number;
+  response: string;
+}
+
+export function segmentQuery(query: string): string[] {
+  const preset = getPresetSegmentation(query);
+  if (preset) return preset;
+
+  // Split query by sentence boundaries or major conjunctions
+  const parts = query
+    .split(/(?:\. |\? |\! |; |\band also\b|\band then\b|\bthen\b|, and |\r?\n)/i)
+    .map(p => p.trim())
+    .filter(p => p.length > 2);
+
+  if (parts.length === 0) {
+    return [query];
+  }
+  return parts;
+}
+
+export function getPresetSegmentation(query: string): string[] | null {
+  const clean = query.toLowerCase().trim();
+  
+  if (clean.includes("palindrome") && clean.includes("capital of france")) {
+    return [
+      "Hello!",
+      "Write a JavaScript function to check if a string is a palindrome, ignoring spaces and punctuation.",
+      "Is Paris the capital of France?"
+    ];
+  }
+  
+  if (clean.includes("nosql") && clean.includes("google docs")) {
+    return [
+      "Hey, can you help me write a quick email subject line?",
+      "Compare and contrast SQL and NoSQL databases. When would you use one over the other?",
+      "Design a high-level, fault-tolerant system architecture for a real-time collaborative document editor like Google Docs. Show components and database choices."
+    ];
+  }
+
+  if (clean.includes("event loop") && clean.includes("15 + 28") && clean.includes("productivity")) {
+    return [
+      "hello! how's it going?",
+      "Explain the concept of 'Event Loop' in Node.js and how it handles asynchronous operations.",
+      "What is 15 + 28?",
+      "Suggest 5 blog post titles about remote work productivity."
+    ];
+  }
+
+  return null;
+}
+

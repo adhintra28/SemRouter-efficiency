@@ -1,93 +1,195 @@
 'use client';
 
-import React, { useState } from 'react';
-import { MODELS, Model, RoutingDecision } from '../utils/routerEngine';
+import React, { useState, useEffect } from 'react';
+import { MODELS, ModelExecutionResult, getIntersectionModelId, runModelQuery } from '../utils/routerEngine';
 import SettingsPanel from './SettingsPanel';
 import QueryTester from './QueryTester';
-import BatchSimulator from './BatchSimulator';
 import StatsCharts from './StatsCharts';
+import HistoryLineCharts from './HistoryLineCharts';
 
 export default function RouterDashboard() {
-  const [thresholds, setThresholds] = useState({ nano: 2.8, flash: 5.2, pro: 7.8 });
-  const [modelSpecs, setModelSpecs] = useState<Record<string, Model>>(MODELS);
-  const [history, setHistory] = useState<RoutingDecision[]>([]);
+  const modelSpecs = MODELS;
+  const [enabledModelIds, setEnabledModelIds] = useState<string[]>(Object.keys(MODELS));
 
-  // Function to add a routing result
-  const handleNewResult = (result: RoutingDecision) => {
-    // Inject the dynamically updated model characteristics from state into the result cost calculations
-    const spec = modelSpecs[result.model.id];
-    const cost = (result.inputTokens / 1000000 * spec.inputCostPer1M) + (result.outputTokens / 1000000 * spec.outputCostPer1M);
-    const updatedResult = { ...result, cost };
-    setHistory((prev) => [...prev, updatedResult]);
+  const [latestRun, setLatestRun] = useState<ModelExecutionResult[]>([]);
+  const [queryComplexity, setQueryComplexity] = useState<'nano' | 'flash' | 'pro' | 'ultra' | null>(null);
+  const [classifierModelId, setClassifierModelId] = useState<string>('auto');
+  const [routerOverhead, setRouterOverhead] = useState<{
+    provider: string;
+    modelName: string;
+    latency: number;
+    cost: number;
+    tokens: number;
+    isLive: boolean;
+    tier: 'nano' | 'flash' | 'pro' | 'ultra';
+  } | null>(null);
+  const [latencyWeight, setLatencyWeight] = useState<number>(50);
+  const [priceWeight, setPriceWeight] = useState<number>(50);
+  const [isEnlarged, setIsEnlarged] = useState<boolean>(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [runHistory, setRunHistory] = useState<Array<{
+    timestamp: string;
+    query: string;
+    isHybrid: boolean;
+    results: Record<string, { cost: number; latency: number; name: string }>;
+  }>>([]);
+
+  // Load configuration and API keys from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+
+      const savedEnabled = localStorage.getItem('playground_enabled_models');
+      if (savedEnabled) {
+        try {
+          const enabled = JSON.parse(savedEnabled);
+          setTimeout(() => setEnabledModelIds(enabled), 0);
+        } catch (e) {
+          console.error('Error loading enabled models:', e);
+        }
+      }
+      const savedClassifier = localStorage.getItem('router_classifier_model');
+      if (savedClassifier) {
+        setClassifierModelId(savedClassifier);
+      }
+      const savedLatencyWeight = localStorage.getItem('router_latency_weight');
+      if (savedLatencyWeight) {
+        setLatencyWeight(parseInt(savedLatencyWeight));
+      }
+      const savedPriceWeight = localStorage.getItem('router_price_weight');
+      if (savedPriceWeight) {
+        setPriceWeight(parseInt(savedPriceWeight));
+      }
+
+
+    }
+  }, []);
+
+
+
+  const handleSaveEnabledModels = (newEnabled: string[]) => {
+    setEnabledModelIds(newEnabled);
+    localStorage.setItem('playground_enabled_models', JSON.stringify(newEnabled));
   };
 
-  const handleClearHistory = () => {
-    setHistory([]);
+  const handleSaveLatencyWeight = (val: number) => {
+    setLatencyWeight(val);
+    localStorage.setItem('router_latency_weight', val.toString());
   };
 
-  const updateModelSpec = (id: string, field: keyof Model, value: any) => {
-    setModelSpecs((prev) => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        [field]: value,
-      },
-    }));
+  const handleSavePriceWeight = (val: number) => {
+    setPriceWeight(val);
+    localStorage.setItem('router_price_weight', val.toString());
   };
 
-  const resetSettings = () => {
-    setThresholds({ nano: 2.8, flash: 5.2, pro: 7.8 });
-    setModelSpecs(JSON.parse(JSON.stringify(MODELS)));
+  const handleSaveClassifierModel = (newModelId: string) => {
+    setClassifierModelId(newModelId);
+    localStorage.setItem('router_classifier_model', newModelId);
   };
 
-  // -------------------------------------------------------------
-  // Calculations
-  // -------------------------------------------------------------
-  const totalQueries = history.length;
+  // Function to save comparison execution results
+  const handleNewResults = (
+    results: ModelExecutionResult[], 
+    complexity: 'nano' | 'flash' | 'pro' | 'ultra',
+    overhead?: any
+  ) => {
+    setLatestRun(results);
+    setQueryComplexity(complexity);
+    setRouterOverhead(overhead || null);
 
-  // Calculate actual cost of our routed queries
-  const totalRoutedCost = history.reduce((sum, item) => {
-    const spec = modelSpecs[item.model.id];
-    const cost = (item.inputTokens / 1000000 * spec.inputCostPer1M) + (item.outputTokens / 1000000 * spec.outputCostPer1M);
-    return sum + cost;
-  }, 0);
+    const isHybrid = overhead?.provider === 'hybrid';
+    const queryText = results[0]?.query || '';
 
-  // Counterfactual: What if we ALWAYS used Ultra?
-  const alwaysUltraCost = history.reduce((sum, item) => {
-    const spec = modelSpecs.ultra;
-    return sum + (item.inputTokens / 1000000 * spec.inputCostPer1M) + (item.outputTokens / 1000000 * spec.outputCostPer1M);
-  }, 0);
+    setRunHistory(prev => {
+      const runData: Record<string, { cost: number; latency: number; name: string }> = {};
+      
+      Object.keys(MODELS).forEach(mId => {
+        const m = MODELS[mId];
+        if (isHybrid) {
+          const matchedParts = results.filter(r => r.modelId === mId);
+          if (matchedParts.length > 0) {
+            runData[mId] = {
+              cost: matchedParts.reduce((acc, r) => acc + r.totalCost, 0),
+              latency: Math.max(...matchedParts.map(r => r.latency)),
+              name: m.name
+            };
+          } else {
+            const simulated = runModelQuery(queryText, mId, m);
+            runData[mId] = {
+              cost: simulated.totalCost,
+              latency: simulated.latency,
+              name: m.name
+            };
+          }
+        } else {
+          const matched = results.find(r => r.modelId === mId);
+          if (matched) {
+            runData[mId] = {
+              cost: matched.totalCost,
+              latency: matched.latency,
+              name: m.name
+            };
+          } else {
+            const simulated = runModelQuery(queryText, mId, m);
+            runData[mId] = {
+              cost: simulated.totalCost,
+              latency: simulated.latency,
+              name: m.name
+            };
+          }
+        }
+      });
 
-  // Counterfactual: What if we ALWAYS used Flash?
-  const alwaysFlashCost = history.reduce((sum, item) => {
-    const spec = modelSpecs.flash;
-    return sum + (item.inputTokens / 1000000 * spec.inputCostPer1M) + (item.outputTokens / 1000000 * spec.outputCostPer1M);
-  }, 0);
+      const next = [...prev, {
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        query: queryText,
+        isHybrid,
+        results: runData
+      }];
 
-  const totalSavedUSD = Math.max(0, alwaysUltraCost - totalRoutedCost);
-  const costSavingsPercent = alwaysUltraCost > 0 
-    ? (totalSavedUSD / alwaysUltraCost) * 100 
-    : 0;
+      if (next.length > 7) {
+        return next.slice(next.length - 7);
+      }
+      return next;
+    });
+  };
 
-  // Average Latencies
-  const avgRoutedLatency = totalQueries > 0 
-    ? history.reduce((sum, h) => sum + h.latency, 0) / totalQueries 
-    : 0;
-  const ultraLatency = modelSpecs.ultra.avgLatency;
-  const speedupPercent = ultraLatency > 0 && avgRoutedLatency > 0
-    ? ((ultraLatency - avgRoutedLatency) / ultraLatency) * 100
-    : 0;
+  // Metrics calculations for the highlights row
+  const totalModelsChecked = enabledModelIds.length;
 
-  // Routing Efficiency: % of queries routed to non-ultra models
-  const nonUltraCount = history.filter(h => h.model.id !== 'ultra').length;
-  const routingEfficiencyPercent = totalQueries > 0 
-    ? (nonUltraCount / totalQueries) * 100 
-    : 0;
+
+  let cheapestModelName = 'N/A';
+  let cheapestModelCost = 0;
+  let fastestModelName = 'N/A';
+  let fastestModelLatency = 0;
+  let intersectionModelName = 'N/A';
+  let intersectionModelIds: string[] = [];
+
+  if (latestRun.length > 0) {
+    const sortedByCost = [...latestRun].sort((a, b) => a.totalCost - b.totalCost);
+    cheapestModelName = sortedByCost[0].modelName;
+    cheapestModelCost = sortedByCost[0].totalCost;
+
+    const sortedBySpeed = [...latestRun].sort((a, b) => a.latency - b.latency);
+    fastestModelName = sortedBySpeed[0].modelName;
+    fastestModelLatency = sortedBySpeed[0].latency;
+
+    if (routerOverhead && routerOverhead.provider === 'hybrid') {
+      intersectionModelName = routerOverhead.modelName;
+      intersectionModelIds = Array.from(new Set(latestRun.map(r => r.modelId)));
+    } else {
+      const intersectionId = getIntersectionModelId(latestRun, queryComplexity, latencyWeight / 100, priceWeight / 100);
+      const matched = latestRun.find(r => r.modelId === intersectionId);
+      if (matched) {
+        intersectionModelName = matched.modelName;
+        intersectionModelIds = [matched.modelId];
+      }
+    }
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', width: '100%' }}>
       
-      {/* Header and Hero */}
+      {/* Header */}
       <header style={{ 
         padding: '40px 20px 20px 20px', 
         textAlign: 'center', 
@@ -96,58 +198,64 @@ export default function RouterDashboard() {
         alignItems: 'center', 
         gap: '12px' 
       }}>
-        <div style={{ 
-          background: 'linear-gradient(135deg, var(--color-flash), var(--color-pro))', 
-          padding: '1px', 
-          borderRadius: '20px',
-          marginBottom: '8px'
-        }}>
-          <div style={{ 
-            background: 'var(--bg-main)', 
-            padding: '4px 14px', 
-            borderRadius: '20px', 
-            fontSize: '0.75rem', 
-            fontWeight: 600, 
-            letterSpacing: '0.05em', 
-            textTransform: 'uppercase',
-            color: 'var(--color-flash)'
-          }}>
-            🤖 LLM Semantic Routing Demo
-          </div>
-        </div>
 
         <h1 style={{ 
           fontSize: '2.5rem', 
           lineHeight: '1.1', 
           fontWeight: 800,
-          background: 'linear-gradient(to right, #ffffff, #94a3b8)', 
-          WebkitBackgroundClip: 'text', 
-          WebkitTextFillColor: 'transparent',
+          color: 'var(--text-main)',
           maxWidth: '800px'
         }}>
-          Optimize LLM Performance, Costs, &amp; Parameters
+          Compare LLM Cost, Performance, &amp; Latency Rates
         </h1>
         <p style={{ 
           color: 'var(--text-muted)', 
           fontSize: '0.95rem', 
-          maxWidth: '600px', 
+          maxWidth: '650px', 
           lineHeight: '1.6' 
         }}>
-          Analyze how semantic routing saves massive budgets by directing simple prompts to lightweight parameters (like Gemini Nano) and reserving complex queries for larger parameters (like Gemini Ultra).
+          Analyze price-to-performance efficiency side-by-side. Toggle models to measure real-time latency variations and token charges across multiple providers.
         </p>
       </header>
 
       {/* Main Grid */}
-      <div className="dashboard-grid">
+      <div className={`dashboard-grid ${isSidebarOpen ? '' : 'collapsed'}`}>
         
-        {/* Settings Sidebar Column */}
-        <SettingsPanel 
-          thresholds={thresholds}
-          setThresholds={setThresholds}
-          modelSpecs={modelSpecs}
-          updateModelSpec={updateModelSpec}
-          resetSettings={resetSettings}
-        />
+        {/* Left Column (Settings Panel & Sidebar Line Charts) */}
+        <div 
+          style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '24px',
+            overflow: 'hidden',
+            transition: 'all 0.3s ease',
+          }}
+        >
+          <SettingsPanel 
+            enabledModelIds={enabledModelIds}
+            setEnabledModelIds={handleSaveEnabledModels}
+            modelSpecs={modelSpecs}
+            classifierModelId={classifierModelId}
+            setClassifierModelId={handleSaveClassifierModel}
+            latencyWeight={latencyWeight}
+            setLatencyWeight={handleSaveLatencyWeight}
+            priceWeight={priceWeight}
+            setPriceWeight={handleSavePriceWeight}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+          />
+          
+          {!isEnlarged && isSidebarOpen && (
+            <HistoryLineCharts 
+              runHistory={runHistory}
+              enabledModelIds={enabledModelIds}
+              modelSpecs={modelSpecs}
+              intersectionModelIds={intersectionModelIds}
+              isEnlarged={false}
+              onToggleEnlarge={() => setIsEnlarged(true)}
+            />
+          )}
+        </div>
 
         {/* Dashboards Contents */}
         <main className="main-content">
@@ -155,68 +263,92 @@ export default function RouterDashboard() {
           {/* Metrics Summary Row */}
           <div className="metrics-row">
             
-            {/* Card 1: Money Saved */}
-            <div className="metric-card saved">
-              <span className="metric-label">Cumulative Savings</span>
-              <span className="metric-value" style={{ color: '#10b981' }}>
-                ${totalSavedUSD.toFixed(5)}
+            {/* Card 1: Cheapest Model */}
+            <div className="metric-card">
+              <span className="metric-label">Cheapest Model</span>
+              <span className="metric-value" style={{ fontSize: '1.25rem' }}>
+                {cheapestModelName}
               </span>
-              <span className="metric-sub">
-                {totalQueries > 0 ? `-${costSavingsPercent.toFixed(1)}% vs Ultra` : 'No queries processed'}
+              <span className="metric-sub" style={{ color: 'var(--text-muted)' }}>
+                {latestRun.length > 0 ? `Cost: $${cheapestModelCost.toFixed(6)}` : 'Run a query to analyze'}
               </span>
             </div>
 
-            {/* Card 2: Speedup Latency */}
-            <div className="metric-card speedup">
-              <span className="metric-label">Latency Reduction</span>
-              <span className="metric-value" style={{ color: 'var(--color-nano)' }}>
-                {speedupPercent > 0 ? `${speedupPercent.toFixed(0)}%` : '0%'}
+            {/* Card 2: Fastest Model */}
+            <div className="metric-card">
+              <span className="metric-label">Fastest Model</span>
+              <span className="metric-value" style={{ fontSize: '1.25rem' }}>
+                {fastestModelName}
               </span>
               <span className="metric-sub" style={{ color: 'var(--text-muted)' }}>
-                {totalQueries > 0 ? `Avg: ${Math.round(avgRoutedLatency)}ms` : 'Idle'}
+                {latestRun.length > 0 ? `Latency: ${fastestModelLatency} ms` : 'Run a query to analyze'}
               </span>
             </div>
 
-            {/* Card 3: Routing Efficiency */}
-            <div className="metric-card efficiency">
-              <span className="metric-label">Routing Efficiency</span>
-              <span className="metric-value" style={{ color: 'var(--color-pro)' }}>
-                {routingEfficiencyPercent > 0 ? `${routingEfficiencyPercent.toFixed(0)}%` : '0%'}
+            {/* Card 3: Balanced Choice */}
+            <div className="metric-card" style={{ border: latestRun.length > 0 ? '1px solid #10b981' : '1px solid var(--border-color)' }}>
+              <span className="metric-label" style={{ color: latestRun.length > 0 ? '#10b981' : 'var(--text-muted)' }}>Balanced Choice</span>
+              <span className="metric-value" style={{ fontSize: '1.25rem', color: latestRun.length > 0 ? '#10b981' : 'var(--text-main)' }}>
+                {intersectionModelName}
               </span>
               <span className="metric-sub" style={{ color: 'var(--text-muted)' }}>
-                {totalQueries > 0 ? `${nonUltraCount} / ${totalQueries} offloaded` : '0 offloaded'}
+                {latestRun.length > 0 ? 'Optimal cost & speed compromise' : 'Run a query to analyze'}
               </span>
             </div>
 
-            {/* Card 4: Query Volume */}
-            <div className="metric-card volume">
-              <span className="metric-label">Total Workload</span>
-              <span className="metric-value" style={{ color: 'var(--color-ultra)' }}>
-                {totalQueries}
+            {/* Card 4: Checked Models */}
+            <div className="metric-card">
+              <span className="metric-label">Selected Models</span>
+              <span className="metric-value">
+                {totalModelsChecked}
               </span>
               <span className="metric-sub" style={{ color: 'var(--text-muted)' }}>
-                {totalQueries > 0 ? `Cost: $${totalRoutedCost.toFixed(5)}` : '$0.00 total spend'}
+                Out of {Object.keys(modelSpecs).length} total available
               </span>
             </div>
+
+
 
           </div>
 
-          {/* Interactive Playground Section */}
-          <QueryTester 
-            thresholds={thresholds}
-            onRouteResult={handleNewResult}
-          />
+          {/* Dynamic Pane Layout: Split screen side-by-side or full width stack */}
+          <div className={`results-comparison-pane ${isEnlarged ? 'side-by-side' : ''}`}>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {/* Interactive Playground Section */}
+              <QueryTester 
+                enabledModelIds={enabledModelIds}
+                onRouteResult={handleNewResults}
+                modelSpecs={modelSpecs}
+                classifierModelId={classifierModelId}
+                queryComplexity={queryComplexity}
+                routerOverhead={routerOverhead}
+                latencyWeight={latencyWeight}
+                priceWeight={priceWeight}
+              />
 
-          {/* Batch Simulation Section */}
-          <BatchSimulator 
-            thresholds={thresholds}
-            onNewResult={handleNewResult}
-            onClearHistory={handleClearHistory}
-            currentHistoryCount={history.length}
-          />
+              {/* Comparative Analytics Charts */}
+              <StatsCharts 
+                latestRun={latestRun} 
+                modelSpecs={modelSpecs}
+                isHybrid={routerOverhead?.provider === 'hybrid'}
+              />
+            </div>
 
-          {/* Visual SVG Analytics Charts */}
-          <StatsCharts history={history} />
+            {isEnlarged && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }} className="animate-scale-in">
+                <HistoryLineCharts 
+                  runHistory={runHistory}
+                  enabledModelIds={enabledModelIds}
+                  modelSpecs={modelSpecs}
+                  intersectionModelIds={intersectionModelIds}
+                  isEnlarged={true}
+                  onToggleEnlarge={() => setIsEnlarged(false)}
+                />
+              </div>
+            )}
+
+          </div>
 
         </main>
       </div>
