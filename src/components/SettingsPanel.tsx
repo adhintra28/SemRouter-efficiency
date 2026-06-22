@@ -1,14 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Model } from '../utils/routerEngine';
 
 interface SettingsPanelProps {
   enabledModelIds: string[];
   setEnabledModelIds: (ids: string[]) => void;
   modelSpecs: Record<string, Model>;
-  classifierModelId: string;
-  setClassifierModelId: (id: string) => void;
   latencyWeight: number;
   setLatencyWeight: (val: number) => void;
   priceWeight: number;
@@ -21,8 +19,6 @@ export default function SettingsPanel({
   enabledModelIds,
   setEnabledModelIds,
   modelSpecs,
-  classifierModelId,
-  setClassifierModelId,
   latencyWeight,
   setLatencyWeight,
   priceWeight,

@@ -6,23 +6,27 @@ import SettingsPanel from './SettingsPanel';
 import QueryTester from './QueryTester';
 import StatsCharts from './StatsCharts';
 import HistoryLineCharts from './HistoryLineCharts';
+import ModelComparisonDashboard from './ModelComparisonDashboard';
+
+export interface RouterOverhead {
+  provider: string;
+  modelName: string;
+  latency: number;
+  cost: number;
+  tokens: number;
+  isLive: boolean;
+  tier: 'nano' | 'flash' | 'pro' | 'ultra';
+}
 
 export default function RouterDashboard() {
   const modelSpecs = MODELS;
   const [enabledModelIds, setEnabledModelIds] = useState<string[]>(Object.keys(MODELS));
+  const [activeView, setActiveView] = useState<'playground' | 'comparison'>('playground');
 
   const [latestRun, setLatestRun] = useState<ModelExecutionResult[]>([]);
   const [queryComplexity, setQueryComplexity] = useState<'nano' | 'flash' | 'pro' | 'ultra' | null>(null);
   const [classifierModelId, setClassifierModelId] = useState<string>('auto');
-  const [routerOverhead, setRouterOverhead] = useState<{
-    provider: string;
-    modelName: string;
-    latency: number;
-    cost: number;
-    tokens: number;
-    isLive: boolean;
-    tier: 'nano' | 'flash' | 'pro' | 'ultra';
-  } | null>(null);
+  const [routerOverhead, setRouterOverhead] = useState<RouterOverhead | null>(null);
   const [latencyWeight, setLatencyWeight] = useState<number>(50);
   const [priceWeight, setPriceWeight] = useState<number>(50);
   const [isEnlarged, setIsEnlarged] = useState<boolean>(false);
@@ -34,37 +38,34 @@ export default function RouterDashboard() {
     results: Record<string, { cost: number; latency: number; name: string }>;
   }>>([]);
 
-  // Load configuration and API keys from localStorage
+  // Load configuration and API keys from localStorage safely
   useEffect(() => {
     if (typeof window !== 'undefined') {
-
       const savedEnabled = localStorage.getItem('playground_enabled_models');
-      if (savedEnabled) {
-        try {
-          const enabled = JSON.parse(savedEnabled);
-          setTimeout(() => setEnabledModelIds(enabled), 0);
-        } catch (e) {
-          console.error('Error loading enabled models:', e);
-        }
-      }
       const savedClassifier = localStorage.getItem('router_classifier_model');
-      if (savedClassifier) {
-        setClassifierModelId(savedClassifier);
-      }
       const savedLatencyWeight = localStorage.getItem('router_latency_weight');
-      if (savedLatencyWeight) {
-        setLatencyWeight(parseInt(savedLatencyWeight));
-      }
       const savedPriceWeight = localStorage.getItem('router_price_weight');
-      if (savedPriceWeight) {
-        setPriceWeight(parseInt(savedPriceWeight));
-      }
 
-
+      setTimeout(() => {
+        if (savedEnabled) {
+          try {
+            setEnabledModelIds(JSON.parse(savedEnabled));
+          } catch (e) {
+            console.error('Error loading enabled models:', e);
+          }
+        }
+        if (savedClassifier) {
+          setClassifierModelId(savedClassifier);
+        }
+        if (savedLatencyWeight) {
+          setLatencyWeight(parseInt(savedLatencyWeight));
+        }
+        if (savedPriceWeight) {
+          setPriceWeight(parseInt(savedPriceWeight));
+        }
+      }, 0);
     }
   }, []);
-
-
 
   const handleSaveEnabledModels = (newEnabled: string[]) => {
     setEnabledModelIds(newEnabled);
@@ -81,16 +82,11 @@ export default function RouterDashboard() {
     localStorage.setItem('router_price_weight', val.toString());
   };
 
-  const handleSaveClassifierModel = (newModelId: string) => {
-    setClassifierModelId(newModelId);
-    localStorage.setItem('router_classifier_model', newModelId);
-  };
-
   // Function to save comparison execution results
   const handleNewResults = (
     results: ModelExecutionResult[], 
     complexity: 'nano' | 'flash' | 'pro' | 'ultra',
-    overhead?: any
+    overhead?: RouterOverhead
   ) => {
     setLatestRun(results);
     setQueryComplexity(complexity);
@@ -156,7 +152,6 @@ export default function RouterDashboard() {
   // Metrics calculations for the highlights row
   const totalModelsChecked = enabledModelIds.length;
 
-
   let cheapestModelName = 'N/A';
   let cheapestModelCost = 0;
   let fastestModelName = 'N/A';
@@ -191,167 +186,183 @@ export default function RouterDashboard() {
       
       {/* Header */}
       <header style={{ 
-        padding: '40px 20px 20px 20px', 
-        textAlign: 'center', 
+        padding: '32px 24px 20px 24px', 
+        borderBottom: '1px solid var(--border-color)',
+        background: 'var(--bg-card)',
         display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center', 
-        gap: '12px' 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '20px'
       }}>
-
-        <h1 style={{ 
-          fontSize: '2.5rem', 
-          lineHeight: '1.1', 
-          fontWeight: 800,
-          color: 'var(--text-main)',
-          maxWidth: '800px'
-        }}>
-          Compare LLM Cost, Performance, &amp; Latency Rates
-        </h1>
-        <p style={{ 
-          color: 'var(--text-muted)', 
-          fontSize: '0.95rem', 
-          maxWidth: '650px', 
-          lineHeight: '1.6' 
-        }}>
-          Analyze price-to-performance efficiency side-by-side. Toggle models to measure real-time latency variations and token charges across multiple providers.
-        </p>
-      </header>
-
-      {/* Main Grid */}
-      <div className={`dashboard-grid ${isSidebarOpen ? '' : 'collapsed'}`}>
-        
-        {/* Left Column (Settings Panel & Sidebar Line Charts) */}
-        <div 
-          style={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '24px',
-            overflow: 'hidden',
-            transition: 'all 0.3s ease',
-          }}
-        >
-          <SettingsPanel 
-            enabledModelIds={enabledModelIds}
-            setEnabledModelIds={handleSaveEnabledModels}
-            modelSpecs={modelSpecs}
-            classifierModelId={classifierModelId}
-            setClassifierModelId={handleSaveClassifierModel}
-            latencyWeight={latencyWeight}
-            setLatencyWeight={handleSaveLatencyWeight}
-            priceWeight={priceWeight}
-            setPriceWeight={handleSavePriceWeight}
-            isSidebarOpen={isSidebarOpen}
-            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-          />
-          
-          {!isEnlarged && isSidebarOpen && (
-            <HistoryLineCharts 
-              runHistory={runHistory}
-              enabledModelIds={enabledModelIds}
-              modelSpecs={modelSpecs}
-              intersectionModelIds={intersectionModelIds}
-              isEnlarged={false}
-              onToggleEnlarge={() => setIsEnlarged(true)}
-            />
-          )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h1 style={{ fontSize: '1.4rem', fontWeight: 700, letterSpacing: '-0.03em', color: 'var(--text-main)' }}>
+              MONOLITH
+            </h1>
+            <span style={{ height: '14px', width: '1px', background: 'var(--border-color)' }}></span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+              AI Model Playground
+            </span>
+          </div>
+          <p style={{ color: 'var(--text-dark)', fontSize: '0.78rem' }}>
+            Analyze pricing efficiency, response latency, and semantic load-balancing.
+          </p>
         </div>
 
-        {/* Dashboards Contents */}
-        <main className="main-content">
+        {/* Tab switcher */}
+        <div className="tabs-container">
+          <button 
+            className={`tab-btn ${activeView === 'playground' ? 'active' : ''}`}
+            onClick={() => setActiveView('playground')}
+          >
+            Model Playground
+          </button>
+          <button 
+            className={`tab-btn ${activeView === 'comparison' ? 'active' : ''}`}
+            onClick={() => setActiveView('comparison')}
+          >
+            Model Comparison
+          </button>
+        </div>
+      </header>
+
+      {activeView === 'playground' ? (
+        /* Main Grid */
+        <div className={`dashboard-grid ${isSidebarOpen ? '' : 'collapsed'}`}>
           
-          {/* Metrics Summary Row */}
-          <div className="metrics-row">
+          {/* Left Column (Settings Panel & Sidebar Line Charts) */}
+          <div 
+            style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '24px',
+              overflow: 'hidden',
+              transition: 'all 0.3s ease',
+            }}
+          >
+            <SettingsPanel 
+              enabledModelIds={enabledModelIds}
+              setEnabledModelIds={handleSaveEnabledModels}
+              modelSpecs={modelSpecs}
+              latencyWeight={latencyWeight}
+              setLatencyWeight={handleSaveLatencyWeight}
+              priceWeight={priceWeight}
+              setPriceWeight={handleSavePriceWeight}
+              isSidebarOpen={isSidebarOpen}
+              onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+            />
             
-            {/* Card 1: Cheapest Model */}
-            <div className="metric-card">
-              <span className="metric-label">Cheapest Model</span>
-              <span className="metric-value" style={{ fontSize: '1.25rem' }}>
-                {cheapestModelName}
-              </span>
-              <span className="metric-sub" style={{ color: 'var(--text-muted)' }}>
-                {latestRun.length > 0 ? `Cost: $${cheapestModelCost.toFixed(6)}` : 'Run a query to analyze'}
-              </span>
-            </div>
-
-            {/* Card 2: Fastest Model */}
-            <div className="metric-card">
-              <span className="metric-label">Fastest Model</span>
-              <span className="metric-value" style={{ fontSize: '1.25rem' }}>
-                {fastestModelName}
-              </span>
-              <span className="metric-sub" style={{ color: 'var(--text-muted)' }}>
-                {latestRun.length > 0 ? `Latency: ${fastestModelLatency} ms` : 'Run a query to analyze'}
-              </span>
-            </div>
-
-            {/* Card 3: Balanced Choice */}
-            <div className="metric-card" style={{ border: latestRun.length > 0 ? '1px solid #10b981' : '1px solid var(--border-color)' }}>
-              <span className="metric-label" style={{ color: latestRun.length > 0 ? '#10b981' : 'var(--text-muted)' }}>Balanced Choice</span>
-              <span className="metric-value" style={{ fontSize: '1.25rem', color: latestRun.length > 0 ? '#10b981' : 'var(--text-main)' }}>
-                {intersectionModelName}
-              </span>
-              <span className="metric-sub" style={{ color: 'var(--text-muted)' }}>
-                {latestRun.length > 0 ? 'Optimal cost & speed compromise' : 'Run a query to analyze'}
-              </span>
-            </div>
-
-            {/* Card 4: Checked Models */}
-            <div className="metric-card">
-              <span className="metric-label">Selected Models</span>
-              <span className="metric-value">
-                {totalModelsChecked}
-              </span>
-              <span className="metric-sub" style={{ color: 'var(--text-muted)' }}>
-                Out of {Object.keys(modelSpecs).length} total available
-              </span>
-            </div>
-
-
-
+            {!isEnlarged && isSidebarOpen && (
+              <HistoryLineCharts 
+                runHistory={runHistory}
+                enabledModelIds={enabledModelIds}
+                modelSpecs={modelSpecs}
+                intersectionModelIds={intersectionModelIds}
+                isEnlarged={false}
+                onToggleEnlarge={() => setIsEnlarged(true)}
+              />
+            )}
           </div>
 
-          {/* Dynamic Pane Layout: Split screen side-by-side or full width stack */}
-          <div className={`results-comparison-pane ${isEnlarged ? 'side-by-side' : ''}`}>
+          {/* Dashboards Contents */}
+          <main className="main-content">
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              {/* Interactive Playground Section */}
-              <QueryTester 
-                enabledModelIds={enabledModelIds}
-                onRouteResult={handleNewResults}
-                modelSpecs={modelSpecs}
-                classifierModelId={classifierModelId}
-                queryComplexity={queryComplexity}
-                routerOverhead={routerOverhead}
-                latencyWeight={latencyWeight}
-                priceWeight={priceWeight}
-              />
+            {/* Metrics Summary Row */}
+            <div className="metrics-row">
+              
+              {/* Card 1: Cheapest Model */}
+              <div className="metric-card">
+                <span className="metric-label">Cheapest Model</span>
+                <span className="metric-value" style={{ fontSize: '1.2rem' }}>
+                  {cheapestModelName}
+                </span>
+                <span className="metric-sub">
+                  {latestRun.length > 0 ? `Cost: $${cheapestModelCost.toFixed(6)}` : 'Awaiting prompt run'}
+                </span>
+              </div>
 
-              {/* Comparative Analytics Charts */}
-              <StatsCharts 
-                latestRun={latestRun} 
-                modelSpecs={modelSpecs}
-                isHybrid={routerOverhead?.provider === 'hybrid'}
-              />
+              {/* Card 2: Fastest Model */}
+              <div className="metric-card">
+                <span className="metric-label">Fastest Model</span>
+                <span className="metric-value" style={{ fontSize: '1.2rem' }}>
+                  {fastestModelName}
+                </span>
+                <span className="metric-sub">
+                  {latestRun.length > 0 ? `Latency: ${fastestModelLatency} ms` : 'Awaiting prompt run'}
+                </span>
+              </div>
+
+              {/* Card 3: Balanced Choice */}
+              <div className="metric-card" style={{ border: latestRun.length > 0 ? '1px solid var(--border-focus)' : '1px solid var(--border-color)' }}>
+                <span className="metric-label" style={{ color: latestRun.length > 0 ? 'var(--text-main)' : 'var(--text-muted)' }}>Balanced Choice</span>
+                <span className="metric-value" style={{ fontSize: '1.2rem' }}>
+                  {intersectionModelName}
+                </span>
+                <span className="metric-sub">
+                  {latestRun.length > 0 ? 'Optimal cost & speed compromise' : 'Awaiting prompt run'}
+                </span>
+              </div>
+
+              {/* Card 4: Checked Models */}
+              <div className="metric-card">
+                <span className="metric-label">Selected Models</span>
+                <span className="metric-value">
+                  {totalModelsChecked}
+                </span>
+                <span className="metric-sub">
+                  Out of {Object.keys(modelSpecs).length} total available
+                </span>
+              </div>
+
             </div>
 
-            {isEnlarged && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }} className="animate-scale-in">
-                <HistoryLineCharts 
-                  runHistory={runHistory}
+            {/* Dynamic Pane Layout: Split screen side-by-side or full width stack */}
+            <div className={`results-comparison-pane ${isEnlarged ? 'side-by-side' : ''}`}>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {/* Interactive Playground Section */}
+                <QueryTester 
                   enabledModelIds={enabledModelIds}
+                  onRouteResult={handleNewResults}
                   modelSpecs={modelSpecs}
-                  intersectionModelIds={intersectionModelIds}
-                  isEnlarged={true}
-                  onToggleEnlarge={() => setIsEnlarged(false)}
+                  classifierModelId={classifierModelId}
+                  queryComplexity={queryComplexity}
+                  routerOverhead={routerOverhead}
+                  latencyWeight={latencyWeight}
+                  priceWeight={priceWeight}
+                />
+
+                {/* Comparative Analytics Charts */}
+                <StatsCharts 
+                  latestRun={latestRun} 
+                  modelSpecs={modelSpecs}
+                  isHybrid={routerOverhead?.provider === 'hybrid'}
                 />
               </div>
-            )}
 
-          </div>
+              {isEnlarged && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }} className="animate-scale-in">
+                  <HistoryLineCharts 
+                    runHistory={runHistory}
+                    enabledModelIds={enabledModelIds}
+                    modelSpecs={modelSpecs}
+                    intersectionModelIds={intersectionModelIds}
+                    isEnlarged={true}
+                    onToggleEnlarge={() => setIsEnlarged(false)}
+                  />
+                </div>
+              )}
 
-        </main>
-      </div>
+            </div>
+
+          </main>
+        </div>
+      ) : (
+        <div style={{ maxWidth: '1560px', width: '100%', margin: '0 auto', padding: '0 24px 48px 24px' }}>
+          <ModelComparisonDashboard />
+        </div>
+      )}
 
     </div>
   );

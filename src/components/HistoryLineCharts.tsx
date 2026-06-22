@@ -68,7 +68,7 @@ export default function HistoryLineCharts({
   // COST GRAPH MATH
   // ------------------
   let maxCost = 0.0001;
-  let minCost = 0;
+  const minCost = 0;
 
   runHistory.forEach(run => {
     enabledModelIds.forEach(mId => {
@@ -293,7 +293,7 @@ export default function HistoryLineCharts({
         </div>
         {hoveredPoint.query && (
           <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-color)', marginTop: '4px', paddingTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            Q: "{hoveredPoint.query}"
+            Q: &quot;{hoveredPoint.query}&quot;
           </div>
         )}
       </div>
@@ -399,7 +399,7 @@ export default function HistoryLineCharts({
                 textOverflow: 'ellipsis',
                 flex: 1
               }}>
-                "{run.query || 'Baseline Estimation Query'}"
+                &quot;{run.query || 'Baseline Estimation Query'}&quot;
               </span>
               <span style={{ color: 'var(--text-dark)', fontSize: '0.62rem', flexShrink: 0, fontFamily: 'monospace' }}>
                 ({run.timestamp})

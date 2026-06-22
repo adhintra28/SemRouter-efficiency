@@ -1,17 +1,50 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MODELS, Model, ModelExecutionResult, runModelQuery, getIntersectionModelId, segmentQuery, SegmentedPart } from '../utils/routerEngine';
+import { RouterOverhead } from './RouterDashboard';
 
 interface QueryTesterProps {
   enabledModelIds: string[];
-  onRouteResult: (results: ModelExecutionResult[], complexity: 'nano' | 'flash' | 'pro' | 'ultra', overhead?: any) => void;
+  onRouteResult: (results: ModelExecutionResult[], complexity: 'nano' | 'flash' | 'pro' | 'ultra', overhead?: RouterOverhead) => void;
   modelSpecs: Record<string, Model>;
   classifierModelId: string;
   queryComplexity: 'nano' | 'flash' | 'pro' | 'ultra' | null;
-  routerOverhead: any;
+  routerOverhead: RouterOverhead | null;
   latencyWeight: number;
   priceWeight: number;
+}
+
+function StreamingOutput({ text, isStreaming }: { text: string; isStreaming: boolean }) {
+  const [displayedText, setDisplayedText] = useState('');
+
+  useEffect(() => {
+    if (!isStreaming) return;
+
+    let idx = 0;
+    const words = text.split(' ');
+    
+    // Smooth, natural word-by-word typing effect
+    const interval = setInterval(() => {
+      if (idx < words.length) {
+        setDisplayedText((prev) => prev + (idx > 0 ? ' ' : '') + words[idx]);
+        idx++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 15 + Math.random() * 15);
+
+    return () => clearInterval(interval);
+  }, [text, isStreaming]);
+
+  const outputText = isStreaming ? displayedText : text;
+
+  return (
+    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', position: 'relative' }}>
+      {outputText}
+      {isStreaming && displayedText.length < text.length && <span className="streaming-cursor" />}
+    </div>
+  );
 }
 
 export default function QueryTester({ 
@@ -27,7 +60,6 @@ export default function QueryTester({
   const [query, setQuery] = useState('');
   const [routingState, setRoutingState] = useState<'idle' | 'analyzing' | 'done'>('idle');
   const [activeResults, setActiveResults] = useState<ModelExecutionResult[]>([]);
-  const [activeTab, setActiveTab] = useState<string>('');
   const [routerMode, setRouterMode] = useState<'standard' | 'hybrid'>('standard');
   const [hybridResults, setHybridResults] = useState<SegmentedPart[]>([]);
 
@@ -35,18 +67,18 @@ export default function QueryTester({
     { label: "Greeting", text: "Hey! How are you doing today?", tier: 'nano' },
     { label: "Summarize", text: "Summarize the water cycle in three sentences.", tier: 'flash' },
     { label: "Coding", text: "Write a JavaScript function to check if a string is a palindrome, ignoring spaces and punctuation.", tier: 'pro' },
-    { label: "System Design", text: "Design a high-level, fault-tolerant system architecture for a real-time collaborative document editor like Google Docs. Show components and database choices.", tier: 'ultra' },
+    { label: "System Design", text: "Design a high-level, fault-tolerant system architecture for a real-time collaborative document editor like Google Docs.", tier: 'ultra' },
   ];
 
   const hybridSuggestions = [
     { label: "Palindromes & France (Hybrid)", text: "Hello! Write a JavaScript function to check if a string is a palindrome, ignoring spaces and punctuation, and also Is Paris the capital of France?" },
     { label: "SQL/NoSQL & Google Docs (Hybrid)", text: "Hey, can you help me write a quick email subject line? Compare and contrast SQL and NoSQL databases, then design a fault-tolerant Google Docs system architecture." },
-    { label: "Node.js, Math, & Blogs (Hybrid)", text: "hello! how's it going? Explain the concept of 'Event Loop' in Node.js and how it handles asynchronous operations, and what is 15 + 28, and suggest 5 blog post titles about remote work productivity." },
+    { label: "Node.js, Math, & Blogs (Hybrid)", text: "hello! how's it going? Explain the concept of 'Event Loop' in Node.js, and what is 15 + 28, and suggest 5 blog post titles about remote work productivity." },
   ];
 
   const suggestionsToUse = routerMode === 'standard' ? suggestions : hybridSuggestions;
 
-  const handleRoute = async (textToRoute: string) => {
+  const handleRoute = useCallback(async (textToRoute: string) => {
     if (!textToRoute.trim()) return;
     if (enabledModelIds.length === 0) return;
 
@@ -106,7 +138,7 @@ export default function QueryTester({
           latency: pr.latency,
           timestamp: new Date().toLocaleTimeString(),
           isLive: false,
-        } as any));
+        } as ModelExecutionResult));
 
         setHybridResults(partResults);
         setRoutingState('done');
@@ -130,13 +162,13 @@ export default function QueryTester({
     // 1. Identify which classifier to use
     let selectedModelId = classifierModelId;
     if (selectedModelId === 'auto') {
-      selectedModelId = 'gemini-flash'; // default fallback
+      selectedModelId = 'gemini-flash';
     }
 
     const classifierModel = modelSpecs[selectedModelId] || MODELS[selectedModelId] || MODELS['gemini-flash'];
 
     const classifyStartTime = Date.now();
-    await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 300));
+    await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 200));
     
     const { classifyQueryByPresetSimilarity } = await import('../utils/routerEngine');
     const detectedComplexity = classifyQueryByPresetSimilarity(textToRoute);
@@ -146,7 +178,6 @@ export default function QueryTester({
     const outTokens = 5;
     const overheadTokens = inTokens + outTokens;
     const overheadCost = (inTokens / 1000000 * classifierModel.inputCostPer1M) + (outTokens / 1000000 * classifierModel.outputCostPer1M);
-    const isClassifierLive = false;
 
     const classificationOverhead = {
       provider: classifierModel.provider,
@@ -154,7 +185,7 @@ export default function QueryTester({
       latency: overheadLatency,
       cost: overheadCost,
       tokens: overheadTokens,
-      isLive: isClassifierLive,
+      isLive: false,
       tier: detectedComplexity,
     };
 
@@ -169,50 +200,51 @@ export default function QueryTester({
       setActiveResults(results);
       setRoutingState('done');
       onRouteResult(results, detectedComplexity, classificationOverhead);
-      
-      if (results.length > 0) {
-        setActiveTab(results[0].modelId);
-      }
     } catch (e) {
       console.error("Execution failed:", e);
       setRoutingState('idle');
     }
-  };
+  }, [enabledModelIds, onRouteResult, modelSpecs, classifierModelId, routerMode, latencyWeight, priceWeight]);
 
-  const handleSuggestClick = (text: string) => {
+  const handleSuggestClick = useCallback((text: string) => {
     setQuery(text);
     handleRoute(text);
-  };
+  }, [handleRoute]);
+
+  const intersectionModelId = getIntersectionModelId(activeResults, queryComplexity, latencyWeight / 100, priceWeight / 100);
+  const routedModel = activeResults.find(r => r.modelId === intersectionModelId);
 
   return (
     <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+      
+      {/* Mode Switches */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h2 style={{ fontSize: '1.25rem', marginBottom: '4px', color: 'var(--text-main)' }}>
+          <h2 style={{ fontSize: '1.15rem', color: 'var(--text-main)', margin: 0 }}>
             Playground Comparison
           </h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Enter a prompt to analyze cost, tokens, and response speed across selected models simultaneously.
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+            Enter a prompt to compare response speed, costs, and token consumption simultaneously.
           </p>
         </div>
 
-        {/* Mode Selector Tabs */}
-        <div style={{ display: 'flex', gap: '8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '30px', padding: '4px' }}>
+        {/* Tab mode toggle */}
+        <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '3px' }}>
           <button 
             onClick={() => { setRouterMode('standard'); setRoutingState('idle'); }}
             style={{
               background: routerMode === 'standard' ? 'var(--btn-primary-bg)' : 'transparent',
               color: routerMode === 'standard' ? 'var(--btn-primary-text)' : 'var(--text-muted)',
               border: 'none',
-              padding: '6px 14px',
-              borderRadius: '20px',
-              fontSize: '0.75rem',
+              padding: '6px 12px',
+              borderRadius: '4px',
+              fontSize: '0.72rem',
               fontWeight: 600,
               cursor: 'pointer',
               transition: 'all var(--transition-fast)'
             }}
           >
-            Single Model Comparison
+            Multi-Model Playground
           </button>
           <button 
             onClick={() => { setRouterMode('hybrid'); setRoutingState('idle'); }}
@@ -220,15 +252,15 @@ export default function QueryTester({
               background: routerMode === 'hybrid' ? 'var(--btn-primary-bg)' : 'transparent',
               color: routerMode === 'hybrid' ? 'var(--btn-primary-text)' : 'var(--text-muted)',
               border: 'none',
-              padding: '6px 14px',
-              borderRadius: '20px',
-              fontSize: '0.75rem',
+              padding: '6px 12px',
+              borderRadius: '4px',
+              fontSize: '0.72rem',
               fontWeight: 600,
               cursor: 'pointer',
               transition: 'all var(--transition-fast)'
             }}
           >
-            Hybrid Router
+            Hybrid Router Math
           </button>
         </div>
       </div>
@@ -242,12 +274,12 @@ export default function QueryTester({
               key={idx}
               onClick={() => handleSuggestClick(s.text)}
               style={{
-                padding: '6px 12px',
-                borderRadius: '20px',
-                background: 'var(--bg-card-hover)',
+                padding: '5px 10px',
+                borderRadius: '4px',
+                background: 'transparent',
                 border: '1px solid var(--border-color)',
-                color: 'var(--text-main)',
-                fontSize: '0.75rem',
+                color: 'var(--text-muted)',
+                fontSize: '0.72rem',
                 cursor: 'pointer',
                 transition: 'all var(--transition-fast)',
                 display: 'inline-flex',
@@ -256,288 +288,262 @@ export default function QueryTester({
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.borderColor = sampleSpec.color;
-                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.color = 'var(--text-main)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.borderColor = 'var(--border-color)';
-                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.color = 'var(--text-muted)';
               }}
             >
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: sampleSpec.color }}></span>
+              <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: sampleSpec.color }}></span>
               {s.label}
             </button>
           );
         })}
       </div>
 
-      {/* Query Input */}
-      <div style={{ position: 'relative', display: 'flex', gap: '10px' }}>
-        <input
-          type="text"
+      {/* Textarea Input */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <textarea
+          rows={3}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Ask something to compare all selected models..."
+          placeholder="Type a custom query here to analyze response variations across selected LLMs..."
           style={{
-            flex: 1,
-            padding: '12px 16px',
+            width: '100%',
+            padding: '12px 14px',
             borderRadius: 'var(--radius-sm)',
             background: 'var(--bg-main)',
             border: '1px solid var(--border-color)',
             color: 'var(--text-main)',
-            fontSize: '0.9rem',
+            fontSize: '0.85rem',
+            lineHeight: '1.5',
             outline: 'none',
+            resize: 'vertical',
+            fontFamily: 'inherit',
             transition: 'border-color var(--transition-fast)',
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleRoute(query);
           }}
           onFocus={(e) => e.target.style.borderColor = 'var(--border-focus)'}
           onBlur={(e) => e.target.style.borderColor = 'var(--border-color)'}
         />
-        <button
-          onClick={() => handleRoute(query)}
-          className="btn-primary"
-          disabled={routingState === 'analyzing' || !query.trim() || enabledModelIds.length === 0}
-          style={{
-            opacity: !query.trim() || routingState === 'analyzing' || enabledModelIds.length === 0 ? 0.6 : 1,
-            cursor: !query.trim() || routingState === 'analyzing' || enabledModelIds.length === 0 ? 'not-allowed' : 'pointer',
-            minWidth: '130px',
-            justifyContent: 'center',
-          }}
-        >
-          {routingState === 'analyzing' ? 'Comparing...' : 'Run Comparison'}
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => handleRoute(query)}
+            className="btn-primary"
+            disabled={routingState === 'analyzing' || !query.trim() || enabledModelIds.length === 0}
+            style={{ minWidth: '140px' }}
+          >
+            {routingState === 'analyzing' ? 'Routing Queries...' : 'Run Playground'}
+          </button>
+        </div>
       </div>
 
-      {/* Comparison Grid Results */}
-      {routingState !== 'idle' && routerMode === 'standard' && activeResults.length > 0 && (() => {
-        const intersectionModelId = getIntersectionModelId(activeResults, queryComplexity, latencyWeight / 100, priceWeight / 100);
-        const routedModel = activeResults.find(r => r.modelId === intersectionModelId);
-        return (
-          <div className="animate-scale-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '10px' }}>
-            
-            {/* AI Router Decision Panel */}
-            {queryComplexity && routerOverhead && (
-              <div 
-                className="animate-fade-in"
-                style={{
-                  background: 'rgba(59, 130, 246, 0.04)',
-                  border: '1px solid rgba(59, 130, 246, 0.15)',
-                  borderRadius: '12px',
-                  padding: '18px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '14px',
-                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.03)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ 
-                      background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', 
-                      color: '#ffffff', 
-                      padding: '4px 10px', 
-                      borderRadius: '6px', 
-                      fontSize: '0.75rem', 
-                      fontWeight: 700,
-                      letterSpacing: '0.05em',
-                      boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)'
-                    }}>
-                      AI ROUTER ACTIVE
-                    </div>
-                    <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                      Classified Query Complexity: <span style={{ textTransform: 'uppercase', color: '#3b82f6', fontWeight: 800 }}>{queryComplexity}</span>
-                    </span>
-                  </div>
-                </div>
-                
-                <div style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
-                  gap: '12px', 
-                  fontSize: '0.8rem',
-                  background: 'var(--bg-main)',
-                  padding: '12px 16px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)'
-                }}>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase', marginBottom: '2px' }}>Classifier Latency</span>
-                    <strong style={{ color: 'var(--text-main)', fontFamily: 'monospace' }}>{routerOverhead.latency} ms</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase', marginBottom: '2px' }}>Classifier Cost</span>
-                    <strong style={{ color: 'var(--text-main)', fontFamily: 'monospace' }}>${routerOverhead.cost.toFixed(6)}</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase', marginBottom: '2px' }}>Tokens Evaluated</span>
-                    <strong style={{ color: 'var(--text-main)', fontFamily: 'monospace' }}>{routerOverhead.tokens}</strong>
-                  </div>
-                </div>
-                
-                <div style={{ 
-                  fontSize: '0.82rem', 
-                  color: 'var(--text-main)', 
-                  borderTop: '1px solid var(--border-color)', 
-                  paddingTop: '10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  flexWrap: 'wrap'
-                }}>
-                  <span>Routing Pathway:</span> 
-                  <span style={{ color: 'var(--text-muted)' }}>Query complexity matches routing threshold. Redirecting to </span>
-                  <span style={{ 
-                    color: '#10b981', 
-                    fontWeight: 800,
-                    textDecoration: 'underline',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px'
+      {/* Side-by-Side playground column grid */}
+      {routingState !== 'idle' && routerMode === 'standard' && (
+        <div className="animate-scale-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '10px' }}>
+          
+          {/* AI Router Decision Panel */}
+          {queryComplexity && routerOverhead && (
+            <div 
+              className="animate-fade-in"
+              style={{
+                background: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)',
+                padding: '16px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ 
+                    background: 'var(--btn-primary-bg)', 
+                    color: 'var(--btn-primary-text)', 
+                    padding: '3px 8px', 
+                    borderRadius: '4px', 
+                    fontSize: '0.68rem', 
+                    fontWeight: 700,
+                    letterSpacing: '0.05em'
                   }}>
-                    {routedModel ? routedModel.modelName : intersectionModelId}
+                    AI ROUTER DECISION
+                  </div>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                    Complexity: <span style={{ textTransform: 'uppercase', color: 'var(--text-main)', fontWeight: 800 }}>{queryComplexity}</span>
                   </span>
                 </div>
               </div>
-            )}
-
-            {/* Detailed Metric Table */}
-            <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ background: 'var(--bg-card-hover)', borderBottom: '1px solid var(--border-color)' }}>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>Model</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>Latency</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>Input Tokens</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>Output Tokens</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>Token Rates (Per 1M)</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', textAlign: 'right' }}>Total Cost</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeResults.map((result) => {
-                    const modelColor = modelSpecs[result.modelId]?.color || '#94a3b8';
-                    const isIntersection = result.modelId === intersectionModelId;
-                    return (
-                      <tr 
-                        key={result.modelId} 
-                        style={{ 
-                          borderBottom: '1px solid var(--border-color)', 
-                          background: activeTab === result.modelId 
-                            ? 'var(--bg-card-hover)' 
-                            : isIntersection 
-                              ? 'rgba(16, 185, 129, 0.05)' 
-                              : 'transparent',
-                          borderLeft: isIntersection ? '4px solid #10b981' : 'none'
-                        }}
-                      >
-                        <td style={{ padding: '12px 16px', fontWeight: 600 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: modelColor }}></span>
-                            <button 
-                              onClick={() => setActiveTab(result.modelId)} 
-                              style={{ 
-                                background: 'transparent', 
-                                border: 'none', 
-                                color: 'var(--text-main)', 
-                                fontWeight: 600, 
-                                cursor: 'pointer',
-                                textAlign: 'left',
-                                padding: 0,
-                                textDecoration: 'underline'
-                              }}
-                            >
-                              {result.modelName}
-                            </button>
-                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginLeft: '4px' }}>
-                              ({result.provider})
-                            </span>
-                            {isIntersection && (
-                              <span style={{ 
-                                fontSize: '0.65rem', 
-                                background: '#10b981', 
-                                color: '#fff', 
-                                padding: '2px 6px', 
-                                borderRadius: '4px', 
-                                fontWeight: 'bold',
-                                marginLeft: '6px'
-                              }}>
-                                BALANCED CHOICE
-                              </span>
-                            )}
-                            {result.isLive && (
-                              <span style={{ fontSize: '0.6rem', color: '#10b981', fontWeight: 'bold', marginLeft: '6px' }}>LIVE</span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ padding: '12px 16px', fontFamily: 'monospace' }}>{result.latency} ms</td>
-                        <td style={{ padding: '12px 16px', fontFamily: 'monospace' }}>{result.inputTokens}</td>
-                        <td style={{ padding: '12px 16px', fontFamily: 'monospace' }}>{result.outputTokens}</td>
-                        <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                          In: ${result.inputCostPer1M.toFixed(2)} | Out: ${result.outputCostPer1M.toFixed(2)}
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--text-main)' }}>
-                          ${result.totalCost.toFixed(6)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', 
+                gap: '10px', 
+                fontSize: '0.78rem',
+                background: 'var(--bg-card)',
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-color)'
+              }}>
+                <div>
+                  <span style={{ color: 'var(--text-dark)', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase', marginBottom: '2px' }}>Router Latency</span>
+                  <strong style={{ color: 'var(--text-main)', fontFamily: 'monospace' }}>{routerOverhead.latency} ms</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-dark)', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase', marginBottom: '2px' }}>Router Evaluation Cost</span>
+                  <strong style={{ color: 'var(--text-main)', fontFamily: 'monospace' }}>${routerOverhead.cost.toFixed(6)}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-dark)', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase', marginBottom: '2px' }}>Tokens Evaluated</span>
+                  <strong style={{ color: 'var(--text-main)', fontFamily: 'monospace' }}>{routerOverhead.tokens}</strong>
+                </div>
+              </div>
+              
+              <div style={{ 
+                fontSize: '0.8rem', 
+                color: 'var(--text-muted)', 
+                borderTop: '1px solid var(--border-color)', 
+                paddingTop: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                flexWrap: 'wrap'
+              }}>
+                <span>Pathway Routing:</span> 
+                <span>Query properties match thresholds. Optimal routing points to </span>
+                <span style={{ 
+                  color: 'var(--text-main)', 
+                  fontWeight: 700,
+                  textDecoration: 'underline'
+                }}>
+                  {routedModel ? routedModel.modelName : intersectionModelId}
+                </span>
+              </div>
             </div>
+          )}
 
-            {/* Response Viewer */}
-            {activeTab && activeResults.find(r => r.modelId === activeTab) && (() => {
-              const current = activeResults.find(r => r.modelId === activeTab)!;
+          {/* Side-by-Side Grid */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '20px',
+            width: '100%',
+            marginTop: '8px'
+          }}>
+            {enabledModelIds.map((mId) => {
+              const spec = modelSpecs[mId];
+              if (!spec) return null;
+
+              const result = activeResults.find(r => r.modelId === mId);
+              const isIntersection = mId === intersectionModelId;
+              const isCardLoading = routingState === 'analyzing' && !result;
+
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                        Output Response: {current.modelName} ({current.provider.toUpperCase()})
-                      </span>
-                      {current.modelId === intersectionModelId && (
-                        <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 600 }}>
-                          Optimal compromise between speed and cost (Balanced Choice)
+                <div 
+                  key={mId}
+                  className="glass-panel"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                    border: isIntersection ? '1px solid var(--border-focus)' : '1px solid var(--border-color)',
+                    background: isIntersection ? 'rgba(255, 255, 255, 0.01)' : 'var(--bg-card)',
+                    position: 'relative',
+                    minHeight: '280px',
+                    padding: '16px 20px',
+                    transition: 'all 0.22s ease'
+                  }}
+                >
+                  {/* Card Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: spec.color }} />
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-main)' }}>{spec.name}</span>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--text-dark)', textTransform: 'uppercase', fontWeight: 500 }}>
+                          {spec.provider.toUpperCase()} &bull; {spec.parameters}
                         </span>
-                      )}
+                      </div>
                     </div>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                      Calculated Cost: ${current.totalCost.toFixed(6)}
-                    </span>
+                    {isIntersection && (
+                      <span style={{
+                        background: 'var(--btn-primary-bg)',
+                        color: 'var(--btn-primary-text)',
+                        fontSize: '0.6rem',
+                        fontWeight: 700,
+                        padding: '2px 6px',
+                        borderRadius: '3px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em'
+                      }}>
+                        BALANCED CHOICE
+                      </span>
+                    )}
                   </div>
-                  <div 
-                    style={{ 
-                      background: 'var(--bg-card)', 
-                      border: '1px solid var(--border-color)', 
-                      borderRadius: '6px', 
-                      padding: '12px', 
-                      fontSize: '0.82rem', 
-                      lineHeight: '1.5',
-                      fontFamily: 'Consolas, Monaco, monospace', 
-                      color: 'var(--text-main)', 
-                      whiteSpace: 'pre-wrap',
-                      maxHeight: '220px',
-                      overflowY: 'auto'
-                    }}
-                  >
-                    {current.response}
+
+                  {/* Body: Streams output or loading skeletal states */}
+                  <div style={{ 
+                    flex: 1, 
+                    fontSize: '0.8rem', 
+                    color: 'var(--text-main)', 
+                    lineHeight: '1.6', 
+                    fontFamily: 'var(--font-mono)', 
+                    minHeight: '130px',
+                    padding: '4px 0'
+                  }}>
+                    {isCardLoading ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', opacity: 0.5 }}>
+                        <div style={{ height: '14px', width: '92%', background: 'var(--border-color)', borderRadius: '3px', animation: 'fadeIn 1s infinite alternate' }} />
+                        <div style={{ height: '14px', width: '78%', background: 'var(--border-color)', borderRadius: '3px', animation: 'fadeIn 1.2s infinite alternate' }} />
+                        <div style={{ height: '14px', width: '85%', background: 'var(--border-color)', borderRadius: '3px', animation: 'fadeIn 0.9s infinite alternate' }} />
+                      </div>
+                    ) : result ? (
+                      <StreamingOutput key={result.response} text={result.response} isStreaming={routingState === 'done'} />
+                    ) : (
+                      <span style={{ color: 'var(--text-dark)', fontStyle: 'italic' }}>Waiting...</span>
+                    )}
                   </div>
+
+                  {/* Footer Stats Analytics Panel */}
+                  {result && (
+                    <div style={{ 
+                      borderTop: '1px solid var(--border-color)', 
+                      paddingTop: '10px', 
+                      display: 'grid', 
+                      gridTemplateColumns: '1fr 1fr', 
+                      gap: '8px', 
+                      fontSize: '0.72rem',
+                      color: 'var(--text-dark)',
+                      fontFamily: 'var(--font-mono)'
+                    }}>
+                      <div>
+                        <span style={{ display: 'block', fontSize: '0.62rem', color: 'var(--text-dark)' }}>Latency</span>
+                        <strong style={{ color: 'var(--text-main)' }}>{result.latency} ms</strong>
+                      </div>
+                      <div>
+                        <span style={{ display: 'block', fontSize: '0.62rem', color: 'var(--text-dark)' }}>Tokens</span>
+                        <strong style={{ color: 'var(--text-main)' }}>{result.inputTokens} in / {result.outputTokens} out</strong>
+                      </div>
+                      <div style={{ gridColumn: 'span 2', display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-color)', paddingTop: '6px', marginTop: '2px' }}>
+                        <span style={{ fontSize: '0.62rem', color: 'var(--text-dark)' }}>Pricing: In ${result.inputCostPer1M.toFixed(2)} | Out ${result.outputCostPer1M.toFixed(2)}</span>
+                        <strong style={{ color: 'var(--text-main)' }}>${result.totalCost.toFixed(6)}</strong>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
-            })()}
-
+            })}
           </div>
-        );
-      })()}
+
+        </div>
+      )}
 
       {/* Hybrid Semantic Router Results */}
       {routingState !== 'idle' && routerMode === 'hybrid' && hybridResults.length > 0 && (() => {
         const parts = segmentQuery(query);
         
-        // Cost & Latency Math
         const hybridCost = hybridResults.reduce((acc, r) => acc + r.cost, 0);
-        const hybridLatency = Math.max(...hybridResults.map(r => r.latency), 0) + 120; // 120ms router overhead
+        const hybridLatency = Math.max(...hybridResults.map(r => r.latency), 0) + 120;
         
         const highestComplexity = hybridResults.reduce((max, r) => {
           const ranks = { nano: 1, flash: 2, pro: 3, ultra: 4 };
@@ -568,7 +574,7 @@ export default function QueryTester({
             
             {/* Visual Query Segmentation Flowchart */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
                 Query Segmentation &amp; Routing Pathway
               </h3>
               
@@ -583,28 +589,28 @@ export default function QueryTester({
                         display: 'flex', 
                         alignItems: 'center', 
                         gap: '16px', 
-                        background: 'var(--bg-main)', 
+                        background: 'var(--bg-card)', 
                         border: '1px solid var(--border-color)', 
-                        borderRadius: '8px', 
+                        borderRadius: 'var(--radius-sm)', 
                         padding: '12px 16px',
                         justifyContent: 'space-between',
                         flexWrap: 'wrap'
                       }}
                     >
                       <div style={{ flex: 1, minWidth: '240px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--text-dark)', fontWeight: 700, textTransform: 'uppercase' }}>
                           Segment #{idx + 1} &bull; <span style={{ color: modelColor }}>{part.complexity.toUpperCase()} complexity</span>
                         </span>
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-main)', margin: 0, fontStyle: 'italic', lineHeight: '1.4' }}>
-                          "{part.text}"
+                          &quot;{part.text}&quot;
                         </p>
                       </div>
                       
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>→</span>
+                        <span style={{ fontSize: '1rem', color: 'var(--text-dark)' }}>→</span>
                         <div style={{ 
                           width: '200px', 
-                          background: 'var(--bg-card)', 
+                          background: 'var(--bg-main)', 
                           borderLeft: `4px solid ${modelColor}`, 
                           borderRadius: '4px',
                           padding: '8px 12px',
@@ -613,7 +619,7 @@ export default function QueryTester({
                           gap: '2px'
                         }}>
                           <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-main)' }}>{part.routedModelName}</span>
-                          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-dark)', fontFamily: 'var(--font-mono)' }}>
                             Cost: ${part.cost.toFixed(6)} | Latency: {part.latency}ms
                           </span>
                         </div>
@@ -626,19 +632,19 @@ export default function QueryTester({
 
             {/* Mathematical Efficiency Dashboard */}
             <div style={{ 
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(59, 130, 246, 0.05) 100%)',
-              border: '1px solid rgba(16, 185, 129, 0.2)',
-              borderRadius: '12px',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
               padding: '18px',
               display: 'flex',
               flexDirection: 'column',
               gap: '14px'
             }}>
               <div>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>
                   Router Math &amp; Efficiency Breakdown
                 </h3>
-                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                <p style={{ fontSize: '0.72rem', color: 'var(--text-dark)', margin: '2px 0 0 0' }}>
                   Comparing naive sequential routing (entire prompt sent to single model) against parallelized segment routing.
                 </p>
               </div>
@@ -646,18 +652,18 @@ export default function QueryTester({
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
                 {/* Cost savings */}
                 <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Financial Optimization</span>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-dark)', textTransform: 'uppercase' }}>Financial Optimization</span>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Naive Cost ({naiveModel.name}):</span>
-                      <span style={{ fontFamily: 'monospace' }}>${naiveCost.toFixed(6)}</span>
+                      <span style={{ fontFamily: 'var(--font-mono)' }}>${naiveCost.toFixed(6)}</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#10b981', fontWeight: 600 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-main)', fontWeight: 600 }}>
                       <span>Semantic Router Cost (Combined):</span>
-                      <span style={{ fontFamily: 'monospace' }}>${hybridCost.toFixed(6)}</span>
+                      <span style={{ fontFamily: 'var(--font-mono)' }}>${hybridCost.toFixed(6)}</span>
                     </div>
                     <div style={{ height: '1px', background: 'var(--border-color)', margin: '2px 0' }} />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#10b981', fontSize: '0.85rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: 'var(--text-main)', fontSize: '0.85rem' }}>
                       <span>Total Savings:</span>
                       <span>${costSavingsUSD.toFixed(6)} ({costSavingsPct.toFixed(1)}% saved)</span>
                     </div>
@@ -666,18 +672,18 @@ export default function QueryTester({
 
                 {/* Latency savings */}
                 <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Speed Optimization</span>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-dark)', textTransform: 'uppercase' }}>Speed Optimization</span>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Naive Latency ({naiveModel.name}):</span>
-                      <span style={{ fontFamily: 'monospace' }}>{naiveLatency} ms</span>
+                      <span style={{ fontFamily: 'var(--font-mono)' }}>{naiveLatency} ms</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#3b82f6', fontWeight: 600 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-main)', fontWeight: 600 }}>
                       <span>Parallel Router Latency (+120ms):</span>
-                      <span style={{ fontFamily: 'monospace' }}>{hybridLatency} ms</span>
+                      <span style={{ fontFamily: 'var(--font-mono)' }}>{hybridLatency} ms</span>
                     </div>
                     <div style={{ height: '1px', background: 'var(--border-color)', margin: '2px 0' }} />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#3b82f6', fontSize: '0.85rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: 'var(--text-main)', fontSize: '0.85rem' }}>
                       <span>Time Savings:</span>
                       <span>{latencySavingsMS} ms ({latencySavingsPct.toFixed(1)}% faster)</span>
                     </div>
@@ -687,16 +693,16 @@ export default function QueryTester({
 
               {/* Formulation */}
               <div style={{ 
-                background: 'var(--bg-card)', 
+                background: 'var(--bg-main)', 
                 border: '1px solid var(--border-color)', 
-                borderRadius: '8px', 
+                borderRadius: 'var(--radius-sm)', 
                 padding: '12px 14px',
                 fontSize: '0.75rem',
-                color: 'var(--text-muted)',
+                color: 'var(--text-dark)',
                 lineHeight: '1.4'
               }}>
                 <strong>Mathematical Formulation of Hybrid Routing:</strong>
-                <div style={{ margin: '6px 0', fontFamily: 'monospace', color: 'var(--text-main)', fontSize: '0.8rem' }}>
+                <div style={{ margin: '6px 0', fontFamily: 'var(--font-mono)', color: 'var(--text-main)', fontSize: '0.8rem' }}>
                   Cost_Router = ∑(Tokens_Segment_i * Model_Segment_i_Rate) <br />
                   Latency_Router = max(Latency_Segment_i) + Routing_Overhead
                 </div>
@@ -705,7 +711,7 @@ export default function QueryTester({
 
               {/* Recommended combination indicator */}
               <div style={{ 
-                fontSize: '0.82rem', 
+                fontSize: '0.8rem', 
                 color: 'var(--text-main)', 
                 borderTop: '1px solid var(--border-color)', 
                 paddingTop: '12px',
@@ -717,8 +723,8 @@ export default function QueryTester({
                 <span>Routing Pathway:</span> 
                 <span style={{ color: 'var(--text-muted)' }}>Optimal parallel combination recommended as Balanced Choice: </span>
                 <span style={{ 
-                  color: '#10b981', 
-                  fontWeight: 800,
+                  color: 'var(--text-main)', 
+                  fontWeight: 700,
                   textDecoration: 'underline',
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -731,15 +737,15 @@ export default function QueryTester({
             </div>
 
             {/* Aggregated Output Viewer */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)' }}>
                 Aggregated Router Response
               </span>
               <div 
                 style={{ 
-                  background: 'var(--bg-card)', 
+                  background: 'var(--bg-main)', 
                   border: '1px solid var(--border-color)', 
-                  borderRadius: '6px', 
+                  borderRadius: 'var(--radius-sm)', 
                   padding: '14px', 
                   fontSize: '0.82rem', 
                   lineHeight: '1.6',
@@ -750,10 +756,10 @@ export default function QueryTester({
               >
                 {hybridResults.map((part, idx) => (
                   <div key={idx} style={{ marginBottom: idx < hybridResults.length - 1 ? '14px' : 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', color: modelSpecs[part.routedModelId]?.color || 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '2px', fontWeight: 'bold' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', color: modelSpecs[part.routedModelId]?.color || 'var(--text-dark)', textTransform: 'uppercase', marginBottom: '2px', fontWeight: 'bold' }}>
                       <span>Part {idx + 1} &bull; Routed to {part.routedModelName}</span>
                     </div>
-                    <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-main)' }}>
+                    <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>
                       {part.response}
                     </div>
                   </div>
