@@ -429,3 +429,19 @@ input:checked + .slider:before {
   animation: blink 0.8s infinite;
   vertical-align: middle;
 }
+
+@keyframes pulse {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+.animate-pulse {
+  animation: pulse 1.2s infinite alternate ease-in-out;
+}
+

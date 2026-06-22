@@ -71,9 +71,9 @@ export default function QueryTester({
   ];
 
   const hybridSuggestions = [
-    { label: "Palindromes & France (Hybrid)", text: "Hello! Write a JavaScript function to check if a string is a palindrome, ignoring spaces and punctuation, and also Is Paris the capital of France?" },
-    { label: "SQL/NoSQL & Google Docs (Hybrid)", text: "Hey, can you help me write a quick email subject line? Compare and contrast SQL and NoSQL databases, then design a fault-tolerant Google Docs system architecture." },
-    { label: "Node.js, Math, & Blogs (Hybrid)", text: "hello! how's it going? Explain the concept of 'Event Loop' in Node.js, and what is 15 + 28, and suggest 5 blog post titles about remote work productivity." },
+    { label: "Palindromes & France (Semantic Router)", text: "Hello! Write a JavaScript function to check if a string is a palindrome, ignoring spaces and punctuation, and also Is Paris the capital of France?" },
+    { label: "SQL/NoSQL & Google Docs (Semantic Router)", text: "Hey, can you help me write a quick email subject line? Compare and contrast SQL and NoSQL databases, then design a fault-tolerant Google Docs system architecture." },
+    { label: "Node.js, Math, & Blogs (Semantic Router)", text: "hello! how's it going? Explain the concept of 'Event Loop' in Node.js, and what is 15 + 28, and suggest 5 blog post titles about remote work productivity." },
   ];
 
   const suggestionsToUse = routerMode === 'standard' ? suggestions : hybridSuggestions;
@@ -260,7 +260,7 @@ export default function QueryTester({
               transition: 'all var(--transition-fast)'
             }}
           >
-            Hybrid Router Math
+            Semantic Router
           </button>
         </div>
       </div>
@@ -538,7 +538,7 @@ export default function QueryTester({
         </div>
       )}
 
-      {/* Hybrid Semantic Router Results */}
+      {/* Semantic Router Results */}
       {routingState !== 'idle' && routerMode === 'hybrid' && hybridResults.length > 0 && (() => {
         const parts = segmentQuery(query);
         
@@ -679,7 +679,7 @@ export default function QueryTester({
                       <span style={{ fontFamily: 'var(--font-mono)' }}>{naiveLatency} ms</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-main)', fontWeight: 600 }}>
-                      <span>Parallel Router Latency (+120ms):</span>
+                      <span>Semantic Router Latency (+120ms):</span>
                       <span style={{ fontFamily: 'var(--font-mono)' }}>{hybridLatency} ms</span>
                     </div>
                     <div style={{ height: '1px', background: 'var(--border-color)', margin: '2px 0' }} />
@@ -701,7 +701,7 @@ export default function QueryTester({
                 color: 'var(--text-dark)',
                 lineHeight: '1.4'
               }}>
-                <strong>Mathematical Formulation of Hybrid Routing:</strong>
+                <strong>Mathematical Formulation of Semantic Routing:</strong>
                 <div style={{ margin: '6px 0', fontFamily: 'var(--font-mono)', color: 'var(--text-main)', fontSize: '0.8rem' }}>
                   Cost_Router = ∑(Tokens_Segment_i * Model_Segment_i_Rate) <br />
                   Latency_Router = max(Latency_Segment_i) + Routing_Overhead

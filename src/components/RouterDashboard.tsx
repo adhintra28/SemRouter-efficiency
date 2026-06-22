@@ -184,6 +184,25 @@ export default function RouterDashboard() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', width: '100%' }}>
       
+      {/* Upcoming API Keys Feature Tag Banner */}
+      <div style={{
+        background: 'linear-gradient(90deg, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%)',
+        borderBottom: '1px solid var(--border-color)',
+        padding: '10px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '12px',
+        fontSize: '0.8rem',
+        color: 'var(--text-main)',
+        flexWrap: 'wrap',
+        textAlign: 'center'
+      }}>
+        <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}>
+          Soon you can <strong style={{ color: 'var(--text-main)' }}>test with your own live API keys</strong> to run real-time queries directly in your browser.
+        </span>
+      </div>
+
       {/* Header */}
       <header style={{ 
         padding: '32px 24px 20px 24px', 
@@ -198,7 +217,7 @@ export default function RouterDashboard() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <h1 style={{ fontSize: '1.4rem', fontWeight: 700, letterSpacing: '-0.03em', color: 'var(--text-main)' }}>
-              MONOLITH
+              Semantic Router
             </h1>
             <span style={{ height: '14px', width: '1px', background: 'var(--border-color)' }}></span>
             <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
